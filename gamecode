@@ -1,0 +1,905 @@
+import pygame
+import random
+import sys
+import math
+import os
+import json
+
+print("SPACE WARRIOR - Localization, Yellow UI & Fixed Reset Menu...")
+
+# --- DİL SİSTEMİ (LOCALIZATION) ---
+LANG = {
+    "TR": {
+        "title": "SPACE WARRIOR",
+        "credits": "TOPLAM KREDİ",
+        "mode_1p": "< 1 OYUNCU >",
+        "mode_2p": "< 2 OYUNCU >",
+        "online": "< ÇEVRİMİÇİ [KİLİTLİ] >",
+        "settings": "[ AYARLAR ]",
+        "p1_ship": "P1 GEMİ",
+        "p2_ship": "P2 GEMİ",
+        "deploy": "[ BAŞLA ]",
+        "brightness": "PARLAKLIK",
+        "language": "DİL: TÜRKÇE",
+        "reset_prog": "İLERLEMEYİ SIFIRLA",
+        "back": "[ GERİ ]",
+        "confirm_title": "TÜM İLERLEME VE CR'LER SİLİNECEK!",
+        "confirm_q": "BUNU YAPMAK İSTEDİĞİNİZE EMİN MİSİNİZ?",
+        "confirm_hint": "[X / E] EVET   [O / H] HAYIR",
+        "reset_success": "İLERLEME BAŞARIYLA SIFIRLANDI!",
+        "online_locked": "ŞU AN GELİŞTİRME AŞAMASINDA",
+        "session_score": "OTURUM PUANI",
+        "stage": "AŞAMA",
+        "sector_cleared": "SEKTÖR TEMİZLENDİ!",
+        "prepare_stage": "AŞAMA {stage} İÇİN HAZIRLAN",
+        "hull_repaired": "+ GÖVDE ONARILDI",
+        "mission_failed": "GÖREV BAŞARISIZ",
+        "credits_saved": "+ {score} KREDİ KAYDEDİLDİ",
+        "game_over_hint": "[X / ENTER] YENİDEN   [ÜÇGEN / ESC] MENÜ",
+        "max_level": "MAKS SEVİYE",
+        "upgrade": "YÜKSELTME"
+    },
+    "EN": {
+        "title": "SPACE WARRIOR",
+        "credits": "TOTAL CREDITS",
+        "mode_1p": "< 1 PLAYER >",
+        "mode_2p": "< 2 PLAYERS >",
+        "online": "< ONLINE [LOCKED] >",
+        "settings": "[ SETTINGS ]",
+        "p1_ship": "P1 SHIP",
+        "p2_ship": "P2 SHIP",
+        "deploy": "[ DEPLOY ]",
+        "brightness": "BRIGHTNESS",
+        "language": "LANGUAGE: ENGLISH",
+        "reset_prog": "RESET PROGRESS",
+        "back": "[ BACK ]",
+        "confirm_title": "ALL PROGRESS & CREDITS WILL BE ERASED!",
+        "confirm_q": "ARE YOU SURE YOU WANT TO DO THIS?",
+        "confirm_hint": "[X / Y] YES   [O / N] NO",
+        "reset_success": "PROGRESS SUCCESSFULLY RESET!",
+        "online_locked": "CURRENTLY UNDER DEVELOPMENT",
+        "session_score": "SESSION SCORE",
+        "stage": "STAGE",
+        "sector_cleared": "SECTOR CLEARED!",
+        "prepare_stage": "PREPARE FOR STAGE {stage}",
+        "hull_repaired": "+ HULL REPAIRED",
+        "mission_failed": "MISSION FAILED",
+        "credits_saved": "+ {score} CREDITS SAVED",
+        "game_over_hint": "[X / ENTER] RESTART   [TRIANGLE / ESC] MENU",
+        "max_level": "MAX LEVEL",
+        "upgrade": "UPGRADE"
+    }
+}
+
+# --- KAYIT SİSTEMİ (SAVE DATA) ---
+SAVE_FILE = "neon_save.json"
+
+def load_save():
+    if os.path.exists(SAVE_FILE):
+        try:
+            with open(SAVE_FILE, 'r') as f: 
+                data = json.load(f)
+                if "brightness" not in data: data["brightness"] = 1.0
+                if "language" not in data: data["language"] = "TR"
+                return data
+        except: pass
+    return {"score": 0, "levels": {"0": 1, "1": 1, "2": 1}, "brightness": 1.0, "language": "TR"}
+
+def save_game(data):
+    with open(SAVE_FILE, 'w') as f: json.dump(data, f)
+
+save_data = load_save()
+
+def t(key):
+    lang = save_data.get("language", "TR")
+    return LANG[lang].get(key, key)
+
+# --- AYARLAR VE MOTOR KURULUMU ---
+pygame.init()
+pygame.joystick.init()
+
+WINDOW_WIDTH, WINDOW_HEIGHT = 800, 900
+FPS = 60
+
+BLACK, WHITE = (5, 5, 10), (255, 255, 255)
+CYAN, MAGENTA, YELLOW = (0, 255, 255), (255, 0, 255), (255, 255, 0)
+ORANGE, GREEN = (255, 100, 0), (50, 255, 50)
+GRAY = (100, 100, 100)
+
+is_fullscreen = True
+screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.FULLSCREEN | pygame.SCALED)
+pygame.display.set_caption("SPACE WARRIOR")
+clock = pygame.time.Clock()
+
+font_small = pygame.font.Font(None, 24)
+font_large = pygame.font.Font(None, 48)
+font_massive = pygame.font.Font(None, 75)
+
+screen_shake = 0
+esc_hold_time = 0
+MAX_ESC_HOLD = 60  
+
+joysticks = []
+def init_joysticks():
+    global joysticks
+    joysticks = [pygame.joystick.Joystick(i) for i in range(pygame.joystick.get_count())]
+    for j in joysticks: j.init()
+
+init_joysticks()
+
+# --- YARDIMCI METİN ÇİZİMİ ---
+def draw_text(surface, text, font, color, x, y, align="center", alpha=255):
+    text_obj = font.render(text, False, color)
+    if alpha < 255: text_obj.set_alpha(alpha)
+    rect = text_obj.get_rect()
+    if align == "center": rect.center = (x, y)
+    elif align == "left": rect.topleft = (x, y)
+    elif align == "right": rect.topright = (x, y)
+    
+    shadow = font.render(text, False, BLACK)
+    if alpha < 255: shadow.set_alpha(alpha)
+    s_rect = shadow.get_rect(center=(rect.centerx+2, rect.centery+2)) if align=="center" else (shadow.get_rect(topleft=(rect.x+2, rect.y+2)) if align=="left" else shadow.get_rect(topright=(rect.right+2, rect.y+2)))
+    
+    surface.blit(shadow, s_rect); surface.blit(text_obj, rect)
+
+# --- AÇILIŞ / KAPANIŞ ANİMASYONLARI ---
+def opening_animation():
+    total_frames = 180  
+    for i in range(total_frames):
+        clock.tick(FPS)
+        screen.fill(BLACK)
+        alpha = int(255 * (i / 60)) if i < 60 else (255 if i < 120 else int(255 * (1 - ((i - 120) / 60))))
+        draw_text(screen, "SPACE WARRIOR", font_massive, CYAN, WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 20, alpha=alpha)
+        draw_text(screen, "Developed By wxkyrxw", font_small, CYAN, WINDOW_WIDTH - 20, WINDOW_HEIGHT - 20, align="right", alpha=min(alpha, 130))
+        pygame.display.flip()
+
+def closing_animation():
+    fade_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+    for i in range(60):
+        clock.tick(FPS)
+        fade_surf.fill((0, 0, 0, int(255 * (i / 60))))
+        screen.blit(fade_surf, (0, 0))
+        draw_text(screen, "GOOD BYE", font_massive, CYAN, WINDOW_WIDTH//2, WINDOW_HEIGHT//2, alpha=int(255 * (i / 60)))
+        pygame.display.flip()
+    pygame.quit()
+    sys.exit()
+
+# --- GRAFİK ÜRETİMİ ---
+def create_ship_surface(pattern, pixel_size=6):
+    width = len(pattern[0]) * pixel_size
+    height = len(pattern) * pixel_size
+    main_surf = pygame.Surface((width, height), pygame.SRCALPHA)
+    color_map = {'C': CYAN, 'W': WHITE, 'M': MAGENTA, 'Y': YELLOW, 'R': (255,30,30), 'O': ORANGE, 'D': (40,40,40), 'G': GREEN}
+    
+    for row_idx, row in enumerate(pattern):
+        for col_idx, char in enumerate(row):
+            if char in color_map:
+                rx, ry = col_idx * pixel_size, row_idx * pixel_size
+                pygame.draw.rect(main_surf, color_map[char], (rx, ry, pixel_size, pixel_size))
+                pygame.draw.rect(main_surf, WHITE, (rx + 1, ry + 1, pixel_size - 2, pixel_size - 2))
+    return main_surf
+
+def generate_ship_frames(pattern, color, pixel_size=6):
+    base = create_ship_surface(pattern, pixel_size)
+    container = pygame.Surface((base.get_width() + 40, base.get_height() + 40), pygame.SRCALPHA)
+    container.blit(base, (20, 20))
+    return {"straight": container, "left": pygame.transform.rotate(container, 15), "right": pygame.transform.rotate(container, -15)}
+
+# --- OYUNCU GEMİLERİ ---
+SHIPS = [
+    {
+        "name": "CYBER-FALCON", "color": CYAN, "thruster": CYAN, "max_hp": 110, "max_stamina": 100,
+        "levels": {
+            1: {"pattern": ["  W  "," CWC "," CWC "," C C ","C   C"], "speed": 6, "delay": 80, "cost": 0},
+            2: {"pattern": ["   W   ","  CWC  ","  CWC  ","  CWC  "," C   C "," C   C ","C     C"], "speed": 7, "delay": 60, "cost": 3000},
+            3: {"pattern": ["    W    ","   CWC   ","   CWC   ","   CWC   ","  C   C  "," C     C "," C     C ","C       C"], "speed": 8, "delay": 40, "cost": 8000}
+        }
+    },
+    {
+        "name": "CRIMSON-TITAN", "color": (255,30,30), "thruster": ORANGE, "max_hp": 150, "max_stamina": 60,
+        "levels": {
+            1: {"pattern": [" RRR ","RRWRR","RRYRR"," R R ","R   R"], "speed": 5, "delay": 200, "cost": 0},
+            2: {"pattern": ["  RRR  "," RRRRR ","RRRWRRR","RRRYRRR","RR   RR","R     R"], "speed": 5.5, "delay": 180, "cost": 3000},
+            3: {"pattern": ["   RRR   ","  RRRRR  "," RRRRRRR ","RRRRWRRRR","RRRRYRRRR","RRR   RRR","RR     RR"], "speed": 6, "delay": 150, "cost": 8000}
+        }
+    },
+    {
+        "name": "NIGHT-PHANTOM", "color": MAGENTA, "thruster": WHITE, "max_hp": 70, "max_stamina": 150,
+        "levels": {
+            1: {"pattern": ["  M  "," MWM ","M M M","M   M"], "speed": 7, "delay": 110, "cost": 0},
+            2: {"pattern": ["   M   ","  MWM  "," M M M ","MM   MM","M     M"], "speed": 8, "delay": 95, "cost": 3000},
+            3: {"pattern": ["    M    ","   MWM   ","  M M M  "," MM   MM "," M     M ","MM     MM","M       M"], "speed": 9, "delay": 80, "cost": 8000}
+        }
+    }
+]
+
+for ship in SHIPS:
+    for lvl in [1, 2, 3]: ship["levels"][lvl]["frames"] = generate_ship_frames(ship["levels"][lvl]["pattern"], ship["color"])
+
+E1_SURF = create_ship_surface(["M   M"," MMM ","MMYMM"," MMM ","M   M"], 7)
+E2_SURF = create_ship_surface([" C C "," CCC ","CWWWC","  C  "], 6)
+E3_SURF = create_ship_surface(["Y   Y"," YYY "," YWY ","  Y  "], 5)
+BOSS_SURFACE = create_ship_surface([" Y Y Y "," RRRRR ","RRRYRRR","RRRRRRR"," R   R "], 12)
+
+stars = [[random.randint(0, WINDOW_WIDTH), random.randint(0, WINDOW_HEIGHT), random.randint(1, 4)] for _ in range(100)]
+
+class Player2D:
+    def __init__(self, ship_idx, player_id):
+        self.ship_idx, self.player_id = ship_idx, player_id
+        self.level = save_data["levels"][str(self.ship_idx)]
+        self.base_data = SHIPS[self.ship_idx]
+        self.lvl_data = self.base_data["levels"][self.level]
+        
+        self.max_hp = self.base_data["max_hp"]
+        self.hp = self.max_hp
+        self.max_stamina = self.base_data["max_stamina"]
+        self.stamina = self.max_stamina
+        self.invuln_time = 0
+        
+        self.x = WINDOW_WIDTH // 3 if player_id == 1 else (WINDOW_WIDTH // 3) * 2
+        self.y = WINDOW_HEIGHT - 100
+        self.frames, self.image = self.lvl_data["frames"], self.lvl_data["frames"]["straight"]
+        self.rect = self.image.get_rect(center=(self.x, self.y))
+        self.speed, self.shoot_delay = self.lvl_data["speed"], self.lvl_data["delay"]
+        self.last_shot, self.active = pygame.time.get_ticks(), True
+        self.hitbox_radius = 12 + (self.level * 2)
+
+    def take_damage(self, amount, particles):
+        now = pygame.time.get_ticks()
+        if now < self.invuln_time: return False
+        self.hp -= amount
+        self.invuln_time = now + 1000
+        global screen_shake; screen_shake = max(screen_shake, 15)
+        if self.hp <= 0:
+            self.active = False
+            for _ in range(40): particles.append(Particle2D(self.x, self.y, WHITE, vx=random.uniform(-10,10), vy=random.uniform(-10,10), size=7))
+        else:
+            for _ in range(15): particles.append(Particle2D(self.x, self.y, YELLOW, vx=random.uniform(-5,5), vy=random.uniform(-5,5), size=4))
+        return True
+
+    def update(self, parts, move_x, move_y, is_boost, is_shoot, bullets):
+        can_boost = is_boost and self.stamina > 0
+        if can_boost:
+            self.stamina = max(0, self.stamina - 1.5)
+            curr_speed = self.speed * 1.5
+        else:
+            self.stamina = min(self.max_stamina, self.stamina + 0.8)
+            curr_speed = self.speed
+
+        self.x += move_x * curr_speed; self.y += move_y * curr_speed
+        if move_x < -0.2: self.image = self.frames["left"]
+        elif move_x > 0.2: self.image = self.frames["right"]
+        else: self.image = self.frames["straight"]
+
+        self.x = max(40, min(WINDOW_WIDTH - 40, self.x))
+        self.y = max(40, min(WINDOW_HEIGHT - 40, self.y))
+        self.rect.center = (self.x, self.y)
+
+        if can_boost and random.random() > 0.2:
+            parts.append(Particle2D(self.x + random.randint(-8,8), self.y + 20+(self.level*5), self.base_data["thruster"], vy=random.uniform(5, 12), size=6))
+
+        now = pygame.time.get_ticks()
+        if is_shoot and now - self.last_shot > (self.shoot_delay * 0.7 if can_boost else self.shoot_delay):
+            self.fire(bullets); self.last_shot = now
+
+    def fire(self, bullets):
+        c = self.base_data["color"]
+        name = self.base_data["name"]
+        if name == "CYBER-FALCON":
+            spd = -30
+            if self.level == 1: bullets.append(Bullet2D(self.x, self.y - 10, c, vy=spd))
+            elif self.level == 2:
+                bullets.append(Bullet2D(self.x - 8, self.y - 10, c, vy=spd))
+                bullets.append(Bullet2D(self.x + 8, self.y - 10, c, vy=spd))
+            elif self.level == 3:
+                bullets.append(Bullet2D(self.x - 14, self.y - 5, c, vy=spd))
+                bullets.append(Bullet2D(self.x, self.y - 15, c, vy=spd))
+                bullets.append(Bullet2D(self.x + 14, self.y - 5, c, vy=spd))
+        elif name == "CRIMSON-TITAN":
+            spd = -18
+            if self.level == 1:
+                bullets.append(Bullet2D(self.x, self.y - 10, c, vy=spd))
+                bullets.append(Bullet2D(self.x, self.y - 10, c, vx=-4, vy=spd))
+                bullets.append(Bullet2D(self.x, self.y - 10, c, vx=4, vy=spd))
+            elif self.level == 2: 
+                bullets.append(Bullet2D(self.x - 10, self.y, c, vy=spd))
+                bullets.append(Bullet2D(self.x + 10, self.y, c, vy=spd))
+                bullets.append(Bullet2D(self.x, self.y - 10, c, vx=-5, vy=spd))
+                bullets.append(Bullet2D(self.x, self.y - 10, c, vx=5, vy=spd))
+                bullets.append(Bullet2D(self.x, self.y - 15, c, vy=spd))
+            elif self.level == 3:
+                bullets.append(Bullet2D(self.x - 15, self.y, c, vy=spd))
+                bullets.append(Bullet2D(self.x, self.y - 10, c, vy=spd))
+                bullets.append(Bullet2D(self.x + 15, self.y, c, vy=spd))
+                bullets.append(Bullet2D(self.x - 10, self.y, c, vx=-5, vy=spd))
+                bullets.append(Bullet2D(self.x - 10, self.y, c, vx=-8, vy=spd))
+                bullets.append(Bullet2D(self.x + 10, self.y, c, vx=5, vy=spd))
+                bullets.append(Bullet2D(self.x + 10, self.y, c, vx=8, vy=spd))
+        else:
+            spd = -22
+            if self.level == 1:
+                bullets.append(Bullet2D(self.x - 15, self.y, c, vy=spd))
+                bullets.append(Bullet2D(self.x + 15, self.y, c, vy=spd))
+            elif self.level == 2:
+                bullets.append(Bullet2D(self.x - 20, self.y, c, vy=spd))
+                bullets.append(Bullet2D(self.x + 20, self.y, c, vy=spd))
+                bullets.append(Bullet2D(self.x - 10, self.y - 10, c, vx=-2, vy=spd))
+                bullets.append(Bullet2D(self.x + 10, self.y - 10, c, vx=2, vy=spd))
+            elif self.level == 3:
+                bullets.append(Bullet2D(self.x - 25, self.y, c, vy=spd))
+                bullets.append(Bullet2D(self.x + 25, self.y, c, vy=spd))
+                bullets.append(Bullet2D(self.x - 12, self.y - 10, c, vx=-3, vy=spd))
+                bullets.append(Bullet2D(self.x + 12, self.y - 10, c, vx=3, vy=spd))
+                bullets.append(Bullet2D(self.x, self.y - 20, c, vy=spd))
+
+    def draw(self, surface):
+        if not self.active: return
+        now = pygame.time.get_ticks()
+        if now < self.invuln_time and (now // 100) % 2 == 0: pass 
+        else: surface.blit(self.image, self.rect)
+        
+        bar_w, bar_h = 40, 4
+        hp_ratio = max(0, self.hp / self.max_hp)
+        pygame.draw.rect(surface, (255,30,30), (self.x - bar_w//2, self.y + 40, bar_w, bar_h))
+        pygame.draw.rect(surface, GREEN, (self.x - bar_w//2, self.y + 40, int(bar_w * hp_ratio), bar_h))
+        
+        stam_ratio = max(0, self.stamina / self.max_stamina)
+        pygame.draw.rect(surface, (0, 0, 80), (self.x - bar_w//2, self.y + 46, bar_w, bar_h))
+        pygame.draw.rect(surface, CYAN, (self.x - bar_w//2, self.y + 46, int(bar_w * stam_ratio), bar_h))
+
+
+class Enemy2D:
+    def __init__(self, stage=1):
+        self.type = random.choices(["cruiser", "hunter", "hornet"], weights=[50, 30, 20])[0]
+        self.x = random.randint(50, WINDOW_WIDTH - 50)
+        self.y = -50
+        if self.type == "cruiser":
+            self.image, self.hp, self.vy, self.hitbox_radius = E1_SURF, 2 + (stage // 2), random.uniform(3, 5) + (stage * 0.3), 20
+        elif self.type == "hunter": 
+            self.image, self.hp, self.vy, self.hitbox_radius = E2_SURF, 1 + (stage // 3), random.uniform(2, 4) + (stage * 0.3), 15
+            self.last_shot, self.shoot_delay = pygame.time.get_ticks(), random.randint(1500, 2500)
+        elif self.type == "hornet": 
+            self.image, self.hp, self.vy, self.hitbox_radius = E3_SURF, 1, random.uniform(4, 7) + (stage * 0.5), 12
+            self.base_x, self.time_offset = self.x, random.uniform(0, 100)
+
+        self.rect = self.image.get_rect(center=(self.x, self.y))
+        self.active, self.stage = True, stage
+
+    def update(self, bullets_list=None):
+        self.y += self.vy
+        if self.type == "hornet": self.x = self.base_x + math.sin((pygame.time.get_ticks() / 300) + self.time_offset) * 80
+        self.rect.center = (self.x, self.y)
+        if self.type == "hunter" and bullets_list is not None:
+            now = pygame.time.get_ticks()
+            if now - self.last_shot > max(500, self.shoot_delay - (self.stage * 100)):
+                bullets_list.append(Bullet2D(self.x, self.y + 10, CYAN, vx=0, vy=8 + (self.stage * 0.5), is_player=False))
+                self.last_shot = now
+        if self.y > WINDOW_HEIGHT + 50: self.active = False
+
+    def hit(self, parts):
+        self.hp -= 1
+        c = YELLOW if self.type == "cruiser" else (WHITE if self.type == "hunter" else ORANGE)
+        for _ in range(3): parts.append(Particle2D(self.x, self.y, c, vx=random.uniform(-3,3), vy=random.uniform(-3,3), size=5))
+        if self.hp <= 0:
+            for _ in range(10): parts.append(Particle2D(self.x, self.y, YELLOW, vx=random.uniform(-6,6), vy=random.uniform(-6,6), size=6))
+            self.active = False
+
+    def draw(self, surface):
+        if self.active: surface.blit(self.image, self.rect)
+
+
+class MiniBoss:
+    def __init__(self, stage=1):
+        self.x, self.y = WINDOW_WIDTH // 2, -100
+        self.image = BOSS_SURFACE
+        self.rect = self.image.get_rect(center=(self.x, self.y))
+        self.hp = self.max_hp = 80 + (stage * 30)
+        self.active = True; self.hitbox_radius = 50
+        self.state = "entering"; self.dir = 1; self.last_shot = pygame.time.get_ticks()
+        self.stage = stage
+        
+    def update(self, bullets, parts):
+        if self.state == "entering":
+            self.y += 2
+            if self.y >= 150: self.state = "fighting"
+        elif self.state == "fighting":
+            self.x += (3 + self.stage * 0.5) * self.dir
+            if self.x > WINDOW_WIDTH - 100: self.dir = -1
+            elif self.x < 100: self.dir = 1
+            now = pygame.time.get_ticks()
+            if now - self.last_shot > max(300, 800 - (self.stage * 50)):
+                bullets.append(Bullet2D(self.x - 30, self.y + 40, ORANGE, vy=9 + (self.stage * 0.5), is_player=False))
+                bullets.append(Bullet2D(self.x + 30, self.y + 40, ORANGE, vy=9 + (self.stage * 0.5), is_player=False))
+                bullets.append(Bullet2D(self.x, self.y + 50, YELLOW, vy=11 + (self.stage * 0.5), is_player=False))
+                self.last_shot = now
+        self.rect.center = (self.x, self.y)
+        
+    def hit(self, parts):
+        self.hp -= 1
+        if self.hp <= 0:
+            global screen_shake; screen_shake = 40
+            for _ in range(40): parts.append(Particle2D(self.x, self.y, ORANGE, vx=random.uniform(-15,15), vy=random.uniform(-15,15), size=12))
+            self.active = False
+            
+    def draw(self, surface):
+        if self.active:
+            surface.blit(self.image, self.rect)
+            if self.state == "fighting":
+                pygame.draw.rect(surface, (255,30,30), (self.x - 50, self.y - 60, 100, 5))
+                pygame.draw.rect(surface, GREEN, (self.x - 50, self.y - 60, 100 * (self.hp/self.max_hp), 5))
+
+
+class Bullet2D:
+    def __init__(self, x, y, color, vx=0, vy=-20, is_player=True):
+        self.x, self.y, self.vx, self.vy = x, y, vx, vy
+        self.color, self.active, self.is_player = color, True, is_player
+        self.radius = 4
+        
+    def update(self):
+        self.x += self.vx; self.y += self.vy
+        if self.y < -50 or self.y > WINDOW_HEIGHT + 50 or self.x < -50 or self.x > WINDOW_WIDTH + 50: self.active = False
+            
+    def draw(self, surface):
+        if not self.active: return
+        speed_mag = math.hypot(self.vx, self.vy) + 0.001
+        dx, dy = (self.vx / speed_mag) * 20, (self.vy / speed_mag) * 20 
+        pygame.draw.line(surface, self.color, (self.x, self.y), (self.x - dx, self.y - dy), 6)
+        pygame.draw.line(surface, WHITE, (self.x, self.y), (self.x - dx, self.y - dy), 2)
+
+
+class Particle2D:
+    def __init__(self, x, y, color, vx=0, vy=0, size=5):
+        self.x, self.y, self.vx, self.vy, self.color, self.size = x, y, vx, vy, color, size
+        self.lifetime = self.max_life = random.randint(15, 30); self.active = True
+    def update(self):
+        self.x += self.vx; self.y += self.vy; self.lifetime -= 1
+        if self.lifetime <= 0: self.active = False
+    def draw(self, surface):
+        if not self.active: return
+        r = max(1, int(self.size * (self.lifetime / self.max_life)))
+        pygame.draw.circle(surface, self.color, (int(self.x), int(self.y)), r)
+
+def draw_esc_progress(surface):
+    global esc_hold_time
+    keys = pygame.key.get_pressed()
+    if keys[pygame.K_ESCAPE]:
+        esc_hold_time += 1
+        if esc_hold_time >= MAX_ESC_HOLD: closing_animation()
+    else:
+        esc_hold_time = max(0, esc_hold_time - 2)
+
+    if esc_hold_time > 0:
+        center, radius = (45, 45), 25
+        ratio = esc_hold_time / MAX_ESC_HOLD
+        pygame.draw.circle(surface, (20, 20, 30), center, radius)
+        pygame.draw.circle(surface, CYAN, center, radius, 3)
+        inner_r = int(radius * ratio)
+        if inner_r > 0: pygame.draw.circle(surface, MAGENTA, center, inner_r)
+        draw_text(surface, "ESC", font_small, WHITE, center[0], center[1])
+
+def toggle_fullscreen():
+    global is_fullscreen, screen
+    is_fullscreen = not is_fullscreen
+    screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.FULLSCREEN | pygame.SCALED if is_fullscreen else pygame.SCALED)
+
+def get_input(p_id):
+    x, y, boost, fire = 0, 0, False, False
+    keys = pygame.key.get_pressed()
+    
+    if p_id == 1:
+        if keys[pygame.K_a]: x -= 1
+        if keys[pygame.K_d]: x += 1
+        if keys[pygame.K_w]: y -= 1
+        if keys[pygame.K_s]: y += 1
+        if keys[pygame.K_LSHIFT]: boost = True
+        if keys[pygame.K_SPACE]: fire = True
+    else:
+        if keys[pygame.K_LEFT]: x -= 1
+        if keys[pygame.K_RIGHT]: x += 1
+        if keys[pygame.K_UP]: y -= 1
+        if keys[pygame.K_DOWN]: y += 1
+        if keys[pygame.K_RSHIFT]: boost = True
+        if keys[pygame.K_RETURN]: fire = True
+
+    if p_id == 1 and joysticks:
+        j = joysticks[0]
+        ax, ay = j.get_axis(0), j.get_axis(1)
+        if abs(ax) > 0.15: x = ax
+        if abs(ay) > 0.15: y = ay
+        if j.get_numhats() > 0:
+            hx, hy = j.get_hat(0)
+            if hx != 0: x = hx
+            if hy != 0: y = -hy
+        if j.get_numbuttons() >= 15:
+            if j.get_button(11): y = -1 
+            if j.get_button(12): y = 1  
+            if j.get_button(13): x = -1 
+            if j.get_button(14): x = 1  
+        if j.get_button(0) or j.get_button(1) or j.get_button(2) or j.get_button(3): fire = True
+        if j.get_button(4) or j.get_button(5) or (j.get_numaxes() > 4 and j.get_axis(4) > 0.1) or (j.get_numaxes() > 5 and j.get_axis(5) > 0.1): boost = True
+
+    length = math.hypot(x, y)
+    if length > 1: x /= length; y /= length
+    return x, y, boost, fire
+
+def attempt_upgrade(ship_idx):
+    if ship_idx is None: return
+    current_lvl = save_data["levels"][str(ship_idx)]
+    if current_lvl < 3:
+        cost = SHIPS[ship_idx]["levels"][current_lvl + 1]["cost"]
+        if save_data["score"] >= cost:
+            save_data["score"] -= cost; save_data["levels"][str(ship_idx)] += 1; save_game(save_data)
+
+def draw_ship_preview(surface, ship_idx, x, y, label, color):
+    current_lvl = save_data["levels"][str(ship_idx)]
+    info = SHIPS[ship_idx]["levels"][current_lvl]
+    surface.blit(info["frames"]["straight"], (x, y))
+    
+    draw_text(surface, f"{label} - LEVEL {current_lvl}", font_small, color, x + 30, y + 100)
+    draw_text(surface, f"HP: {SHIPS[ship_idx]['max_hp']} | STAM: {SHIPS[ship_idx]['max_stamina']}", font_small, WHITE, x + 30, y + 120)
+    
+    if current_lvl < 3:
+        cost = SHIPS[ship_idx]["levels"][current_lvl + 1]["cost"]
+        draw_text(surface, f"{t('upgrade')}: {cost} CR", font_small, GREEN if save_data["score"] >= cost else YELLOW, x + 30, y + 145)
+    else:
+        draw_text(surface, t('max_level'), font_small, ORANGE, x + 30, y + 145)
+
+def main_menu():
+    global save_data
+    menu_items = ["MODE", "ONLINE", "SETTINGS", "P1 SHIP", "P2 SHIP", "START"]
+    selected, is_2p, p1_idx, p2_idx = 0, False, 0, 1
+    
+    in_settings = False
+    settings_selected = 0
+    confirming_reset = False
+    confirm_debounce = 0
+    reset_msg_timer = 0
+
+    render_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
+    joy_cooldown = 0 
+    online_lock_timer = 0
+
+    while True:
+        clock.tick(FPS); render_surf.fill(BLACK)
+        if joy_cooldown > 0: joy_cooldown -= 1
+        if online_lock_timer > 0: online_lock_timer -= 1
+        if reset_msg_timer > 0: reset_msg_timer -= 1
+
+        if joysticks and joy_cooldown == 0:
+            j = joysticks[0]
+            moved = False
+            ax = j.get_axis(0) if j.get_numaxes() > 0 else 0
+            ay = j.get_axis(1) if j.get_numaxes() > 1 else 0
+            hx, hy = j.get_hat(0) if j.get_numhats() > 0 else (0, 0)
+            
+            move_y = 0
+            if ay < -0.6 or hy == 1: move_y = -1
+            elif ay > 0.6 or hy == -1: move_y = 1
+            
+            move_x = 0
+            if ax < -0.6 or hx == -1: move_x = -1
+            elif ax > 0.6 or hx == 1: move_x = 1
+            
+            if move_y != 0:
+                if not confirming_reset:
+                    if in_settings:
+                        settings_selected = (settings_selected + move_y) % 4
+                    else:
+                        selected = (selected + move_y) % len(menu_items)
+                    moved = True
+            
+            if move_x != 0:
+                if not confirming_reset:
+                    if in_settings:
+                        if settings_selected == 0:
+                            delta = 0.1 if move_x > 0 else -0.1
+                            save_data["brightness"] = max(0.6, min(1.4, round(save_data.get("brightness", 1.0) + delta, 1)))
+                            save_game(save_data)
+                        elif settings_selected == 1:
+                            save_data["language"] = "EN" if save_data.get("language", "TR") == "TR" else "TR"
+                            save_game(save_data)
+                    else:
+                        if selected == 0: is_2p = not is_2p
+                        elif selected == 1: online_lock_timer = 120
+                        elif selected == 2: in_settings = True
+                        elif selected == 3: p1_idx = (p1_idx + move_x) % len(SHIPS)
+                        elif selected == 4 and is_2p: p2_idx = (p2_idx + move_x) % len(SHIPS)
+                    moved = True
+            
+            if moved: joy_cooldown = 15
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT: closing_animation()
+            
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_F11: toggle_fullscreen()
+                elif confirming_reset:
+                    if pygame.time.get_ticks() >= confirm_debounce:
+                        if event.key in [pygame.K_e, pygame.K_RETURN]:
+                            save_data = {"score": 0, "levels": {"0": 1, "1": 1, "2": 1}, "brightness": save_data.get("brightness", 1.0), "language": save_data.get("language", "TR")}
+                            save_game(save_data)
+                            confirming_reset = False
+                            reset_msg_timer = 120
+                        elif event.key in [pygame.K_h, pygame.K_ESCAPE, pygame.K_o]:
+                            confirming_reset = False
+                elif in_settings:
+                    if event.key == pygame.K_UP:
+                        settings_selected = (settings_selected - 1) % 4
+                    elif event.key == pygame.K_DOWN:
+                        settings_selected = (settings_selected + 1) % 4
+                    elif event.key in [pygame.K_LEFT, pygame.K_MINUS]:
+                        if settings_selected == 0:
+                            save_data["brightness"] = max(0.6, round(save_data.get("brightness", 1.0) - 0.1, 1))
+                            save_game(save_data)
+                        elif settings_selected == 1:
+                            save_data["language"] = "EN" if save_data.get("language", "TR") == "TR" else "TR"
+                            save_game(save_data)
+                    elif event.key in [pygame.K_RIGHT, pygame.K_PLUS, pygame.K_EQUALS]:
+                        if settings_selected == 0:
+                            save_data["brightness"] = min(1.4, round(save_data.get("brightness", 1.0) + 0.1, 1))
+                            save_game(save_data)
+                        elif settings_selected == 1:
+                            save_data["language"] = "EN" if save_data.get("language", "TR") == "TR" else "TR"
+                            save_game(save_data)
+                    elif event.key == pygame.K_RETURN:
+                        if settings_selected == 2: 
+                            confirming_reset = True
+                            confirm_debounce = pygame.time.get_ticks() + 300
+                        elif settings_selected == 3: in_settings = False
+                    elif event.key == pygame.K_ESCAPE:
+                        in_settings = False
+                else:
+                    if event.key == pygame.K_UP: selected = (selected - 1) % len(menu_items)
+                    elif event.key == pygame.K_DOWN: selected = (selected + 1) % len(menu_items)
+                    elif event.key == pygame.K_RETURN:
+                        if selected == 5: return is_2p, p1_idx, p2_idx
+                        elif selected == 1: online_lock_timer = 120
+                        elif selected == 2: in_settings = True
+                    elif event.key == pygame.K_LEFT:
+                        if selected == 0: is_2p = not is_2p
+                        elif selected == 3: p1_idx = (p1_idx - 1) % len(SHIPS)
+                        elif selected == 4 and is_2p: p2_idx = (p2_idx - 1) % len(SHIPS)
+                    elif event.key == pygame.K_RIGHT:
+                        if selected == 0: is_2p = not is_2p
+                        elif selected == 3: p1_idx = (p1_idx + 1) % len(SHIPS)
+                        elif selected == 4 and is_2p: p2_idx = (p2_idx + 1) % len(SHIPS)
+                    elif event.key == pygame.K_u:
+                        attempt_upgrade(p1_idx if selected == 3 else (p2_idx if selected == 4 else None))
+            
+            if event.type == pygame.JOYBUTTONDOWN:
+                if confirming_reset:
+                    if pygame.time.get_ticks() >= confirm_debounce:
+                        if event.button == 0:  # Cross (X) - Evet
+                            save_data = {"score": 0, "levels": {"0": 1, "1": 1, "2": 1}, "brightness": save_data.get("brightness", 1.0), "language": save_data.get("language", "TR")}
+                            save_game(save_data)
+                            confirming_reset = False
+                            reset_msg_timer = 120
+                        elif event.button in [1, 2, 3]:  # Circle / Square / Triangle - Hayır
+                            confirming_reset = False
+                elif in_settings:
+                    if event.button == 0:  # Cross (X)
+                        if settings_selected == 2: 
+                            confirming_reset = True
+                            confirm_debounce = pygame.time.get_ticks() + 300
+                        elif settings_selected == 3: in_settings = False
+                    elif event.button in [1, 3]:  # Circle / Triangle - Geri
+                        in_settings = False
+                else:
+                    if event.button == 0:  # Cross (X)
+                        if selected == 5: return is_2p, p1_idx, p2_idx
+                        elif selected == 1: online_lock_timer = 120
+                        elif selected == 2: in_settings = True
+                    elif event.button in [1, 3]:  # Yükseltme
+                        attempt_upgrade(p1_idx if selected == 3 else (p2_idx if selected == 4 else None))
+
+        for star in stars:
+            star[1] += star[2]; pygame.draw.rect(render_surf, (80, 80, 120), (star[0], star[1], star[2], star[2]))
+            if star[1] > WINDOW_HEIGHT: star[1] = 0; star[0] = random.randint(0, WINDOW_WIDTH)
+
+        draw_text(render_surf, f"{t('credits')}: {save_data['score']}", font_large, YELLOW, WINDOW_WIDTH//2, 40)
+        draw_text(render_surf, t('title'), font_massive, CYAN, WINDOW_WIDTH//2, 110)
+
+        if in_settings:
+            draw_text(render_surf, f"--- {t('settings')} ---", font_large, MAGENTA, WINDOW_WIDTH//2, 180)
+            
+            b_text = f"{t('brightness')}: {int(save_data.get('brightness', 1.0) * 100)}%"
+            draw_text(render_surf, b_text, font_large, YELLOW if settings_selected == 0 else WHITE, WINDOW_WIDTH//2, 250)
+            
+            lang_text = t('language')
+            draw_text(render_surf, lang_text, font_large, YELLOW if settings_selected == 1 else WHITE, WINDOW_WIDTH//2, 320)
+
+            draw_text(render_surf, t('reset_prog'), font_large, YELLOW if settings_selected == 2 else WHITE, WINDOW_WIDTH//2, 390)
+            draw_text(render_surf, t('back'), font_large, YELLOW if settings_selected == 3 else WHITE, WINDOW_WIDTH//2, 460)
+
+            if reset_msg_timer > 0:
+                draw_text(render_surf, t('reset_success'), font_small, GREEN, WINDOW_WIDTH//2, 530)
+        else:
+            draw_text(render_surf, t('mode_2p') if is_2p else t('mode_1p'), font_large, YELLOW if selected == 0 else WHITE, WINDOW_WIDTH//2, 200)
+            draw_text(render_surf, t('online'), font_large, GRAY if selected != 1 else YELLOW, WINDOW_WIDTH//2, 260)
+            draw_text(render_surf, t('settings'), font_large, YELLOW if selected == 2 else WHITE, WINDOW_WIDTH//2, 320)
+            draw_text(render_surf, f"P1: < {SHIPS[p1_idx]['name']} >", font_large, YELLOW if selected == 3 else WHITE, WINDOW_WIDTH//2, 380)
+            if is_2p: draw_text(render_surf, f"P2: < {SHIPS[p2_idx]['name']} >", font_large, YELLOW if selected == 4 else WHITE, WINDOW_WIDTH//2, 440)
+            else: draw_text(render_surf, "P2: [LOCKED]", font_large, (50,50,50), WINDOW_WIDTH//2, 440)
+            
+            draw_text(render_surf, t('deploy'), font_large, YELLOW if selected == 5 else WHITE, WINDOW_WIDTH//2, 520)
+
+            draw_ship_preview(render_surf, p1_idx, WINDOW_WIDTH//2 - 250, 600, "P1", CYAN)
+            if is_2p: draw_ship_preview(render_surf, p2_idx, WINDOW_WIDTH//2 + 180, 600, "P2", MAGENTA)
+
+        if online_lock_timer > 0:
+            pygame.draw.rect(render_surf, (0, 0, 0, 200), (0, WINDOW_HEIGHT//2 - 30, WINDOW_WIDTH, 60))
+            draw_text(render_surf, t('online_locked'), font_large, YELLOW, WINDOW_WIDTH//2, WINDOW_HEIGHT//2)
+
+        # --- EMIN MISINIZ POPUP KUTUSU (Genişletilmiş ve Sığdırılmış) ---
+        if confirming_reset:
+            box_w, box_h = 700, 200
+            box_x, box_y = WINDOW_WIDTH//2 - box_w//2, WINDOW_HEIGHT//2 - box_h//2
+            pygame.draw.rect(render_surf, (15, 15, 25), (box_x, box_y, box_w, box_h))
+            pygame.draw.rect(render_surf, YELLOW, (box_x, box_y, box_w, box_h), 3)
+            draw_text(render_surf, t('confirm_title'), font_small, YELLOW, WINDOW_WIDTH//2, box_y + 40)
+            draw_text(render_surf, t('confirm_q'), font_small, WHITE, WINDOW_WIDTH//2, box_y + 90)
+            draw_text(render_surf, t('confirm_hint'), font_small, GREEN, WINDOW_WIDTH//2, box_y + 145)
+
+        draw_text(render_surf, "Developed By wxkyrxw", font_small, CYAN, WINDOW_WIDTH - 20, WINDOW_HEIGHT - 20, align="right", alpha=130)
+        draw_text(render_surf, "v1.23.0 DEMO", font_small, GREEN, 20, WINDOW_HEIGHT - 20, align="left")
+
+        draw_esc_progress(render_surf)
+        
+        b_val = save_data.get("brightness", 1.0)
+        if b_val != 1.0:
+            bright_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+            if b_val > 1.0: bright_surf.fill((255, 255, 255, int((b_val - 1.0) * 150)))
+            else: bright_surf.fill((0, 0, 0, int((1.0 - b_val) * 180)))
+            render_surf.blit(bright_surf, (0, 0))
+
+        screen.blit(render_surf, (0, 0)); pygame.display.flip()
+
+# --- OYUN DÖNGÜSÜ ---
+def game_loop(is_2p, p1_idx, p2_idx):
+    global screen_shake, save_data
+    players = [Player2D(p1_idx, 1)]
+    if is_2p: players.append(Player2D(p2_idx, 2))
+    
+    enemies, bullets, particles, boss = [], [], [], None
+    session_score, game_over = 0, False
+    stage, map_progress = 1, 0 
+    map_length = 8000 + (stage * 2000)
+    boss_spawns = [map_length // 2, map_length] 
+    boss_active, sector_clear_timer = False, 0
+    
+    render_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
+    ENEMY_SPAWN = pygame.USEREVENT + 1
+    pygame.time.set_timer(ENEMY_SPAWN, max(500, 1200 - (stage * 100))) 
+
+    while True:
+        clock.tick(FPS); render_surf.fill(BLACK)
+        p1_in = get_input(1); p2_in = get_input(2) if is_2p else (0,0,False,False)
+        
+        global_boost = any(p.active and p.stamina > 0 and (p1_in[2] if p.player_id==1 else p2_in[2]) for p in players)
+        speed_mult = 3 if global_boost else 1
+
+        if not game_over and not boss_active and sector_clear_timer == 0:
+            map_progress += speed_mult
+            if boss_spawns and map_progress >= boss_spawns[0]:
+                is_final = len(boss_spawns) == 1
+                boss_spawns.pop(0)
+                boss = MiniBoss(stage=stage + (1 if is_final else 0))
+                boss_active = True; enemies.clear()
+
+        if sector_clear_timer > 0:
+            sector_clear_timer -= 1
+            if sector_clear_timer == 0:
+                stage += 1; map_progress = 0
+                map_length = 8000 + (stage * 2000)
+                boss_spawns = [map_length // 2, map_length]
+                pygame.time.set_timer(ENEMY_SPAWN, max(400, 1200 - (stage * 100)))
+                for p in players:
+                    if not p.active: p.active = True; p.x, p.y = WINDOW_WIDTH//2, WINDOW_HEIGHT - 100
+                    p.hp = p.max_hp; p.stamina = p.max_stamina
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT: closing_animation()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_F11: toggle_fullscreen()
+                if game_over and event.key == pygame.K_RETURN: return "restart"
+                if game_over and event.key == pygame.K_ESCAPE: return "menu"
+            
+            if event.type == pygame.JOYBUTTONDOWN and game_over:
+                if event.button in [0, 1, 7, 9]: return "restart" 
+                if event.button in [2, 3]: return "menu" 
+                
+            if not game_over and not boss_active and sector_clear_timer == 0 and event.type == ENEMY_SPAWN: 
+                enemies.append(Enemy2D(stage=stage))
+
+        for star in stars:
+            star[1] += star[2] * speed_mult
+            if star[1] > WINDOW_HEIGHT: star[1] = 0; star[0] = random.randint(0, WINDOW_WIDTH)
+            pygame.draw.rect(render_surf, (150, 150, 200), (star[0], star[1], star[2], star[2]*2))
+
+        if not game_over:
+            if players[0].active: players[0].update(particles, p1_in[0], p1_in[1], p1_in[2], p1_in[3], bullets)
+            if is_2p and players[1].active: players[1].update(particles, p2_in[0], p2_in[1], p2_in[2], p2_in[3], bullets)
+            for b in bullets: b.update()
+            for e in enemies: e.update(bullets)
+            for p in particles: p.update()
+            if boss and boss.active: boss.update(bullets, particles)
+
+            for b in bullets:
+                if not b.active: continue
+                if b.is_player:
+                    for e in enemies:
+                        if e.active and math.hypot(e.x - b.x, e.y - b.y) < e.hitbox_radius + b.radius:
+                            e.hit(particles); b.active = False; session_score += 50; break
+                    if boss and boss.active and math.hypot(boss.x - b.x, boss.y - b.y) < boss.hitbox_radius + b.radius:
+                        boss.hit(particles); b.active = False; session_score += 10
+                else:
+                    for p in players:
+                        if p.active and math.hypot(p.x - b.x, p.y - b.y) < p.hitbox_radius + p.hitbox_radius:
+                            if p.take_damage(33, particles): b.active = False
+
+            for p in players:
+                if not p.active: continue
+                for e in enemies:
+                    if e.active and math.hypot(e.x - p.x, e.y - p.y) < e.hitbox_radius + p.hitbox_radius:
+                        if p.take_damage(33, particles): e.active = False
+                if boss and boss.active and math.hypot(boss.x - p.x, boss.y - p.y) < boss.hitbox_radius + p.hitbox_radius - 20:
+                    p.take_damage(33, particles)
+
+            if boss and not boss.active: 
+                boss = None; boss_active = False; session_score += 1000 * stage
+                if len(boss_spawns) == 0: sector_clear_timer = 180 
+            
+            if not any(p.active for p in players): 
+                game_over = True
+                save_data["score"] += session_score; save_game(save_data)
+
+        bullets = [b for b in bullets if b.active]
+        enemies = [e for e in enemies if e.active]
+        particles = [p for p in particles if p.active]
+
+        if boss: boss.draw(render_surf)
+        for b in bullets: b.draw(render_surf)
+        for e in enemies: e.draw(render_surf)
+        for p in players: p.draw(render_surf)
+        for p in particles: p.draw(render_surf)
+
+        draw_text(render_surf, f"{t('session_score')}: {session_score}", font_large, WHITE, 20, 30, align="left")
+        draw_text(render_surf, f"{t('stage')} {stage}", font_large, CYAN, WINDOW_WIDTH - 20, 30, align="right")
+        
+        pr = min(1.0, map_progress / map_length)
+        pygame.draw.rect(render_surf, (50, 50, 50), (WINDOW_WIDTH//2 - 200, 20, 400, 10))
+        pygame.draw.rect(render_surf, CYAN if sector_clear_timer == 0 else GREEN, (WINDOW_WIDTH//2 - 200, 20, 400 * pr, 10))
+
+        if sector_clear_timer > 0:
+            draw_text(render_surf, t('sector_cleared'), font_massive, GREEN, WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 40)
+            draw_text(render_surf, t('prepare_stage').format(stage=stage + 1), font_large, WHITE, WINDOW_WIDTH//2, WINDOW_HEIGHT//2 + 20)
+            draw_text(render_surf, t('hull_repaired'), font_small, CYAN, WINDOW_WIDTH//2, WINDOW_HEIGHT//2 + 60)
+
+        if game_over:
+            pygame.draw.rect(render_surf, (0, 0, 0, 200), (0, WINDOW_HEIGHT//2 - 80, WINDOW_WIDTH, 160))
+            draw_text(render_surf, t('mission_failed'), font_massive, YELLOW, WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 20)
+            draw_text(render_surf, t('credits_saved').format(score=session_score), font_small, GREEN, WINDOW_WIDTH//2, WINDOW_HEIGHT//2 + 25)
+            draw_text(render_surf, t('game_over_hint'), font_small, WHITE, WINDOW_WIDTH//2, WINDOW_HEIGHT//2 + 55)
+
+        draw_esc_progress(render_surf)
+        
+        b_val = save_data.get("brightness", 1.0)
+        if b_val != 1.0:
+            bright_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+            if b_val > 1.0: bright_surf.fill((255, 255, 255, int((b_val - 1.0) * 150)))
+            else: bright_surf.fill((0, 0, 0, int((1.0 - b_val) * 180)))
+            render_surf.blit(bright_surf, (0, 0))
+
+        screen.fill(BLACK)
+        screen.blit(render_surf, (random.randint(-screen_shake, screen_shake) if screen_shake > 0 else 0, random.randint(-screen_shake, screen_shake) if screen_shake > 0 else 0))
+        if screen_shake > 0: screen_shake -= 1
+        pygame.display.flip()
+
+if __name__ == "__main__":
+    opening_animation()
+    while True:
+        is_2p, p1_idx, p2_idx = main_menu() 
+        while True:
+            action = game_loop(is_2p, p1_idx, p2_idx) 
+            if action == "menu": break 
+            elif action == "restart": continue
